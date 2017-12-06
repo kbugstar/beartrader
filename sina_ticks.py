@@ -7,12 +7,18 @@ import logging
 import re
 import json
 import pandas as pd
+import pymongo
 
 URL_TOTAL_SYMBOLS_LITE = 'http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getNameList?page=1&num=10000&sort=symbol&asc=1&node=hs_a'
 
-USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_1) AppleWebKit/604.3.5 (KHTML, like Gecko) Version/11.0.1 Safari/604.3.5'
+# Safari
+#USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_1) AppleWebKit/604.3.5 (KHTML, like Gecko) Version/11.0.1 Safari/604.3.5'
+# Chrome
+USER_AGENT = 'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/62.0.3202.94 Safari/537.36'
 REQUESTS_HEADERS = { 'User-Agent' : USER_AGENT } 
 RE_TOTAL_COUNT = re.compile(r'\(new String\("([^"]+)"\)\)')
+
+DOWNLOAD_TICKS_COLUMNS = ['time', 'price', 'change', 'volume', 'amount', 'type']
 
 def get_all_symbols_lite(s):
     headers = REQUESTS_HEADERS
@@ -67,7 +73,11 @@ def download_symbol_ticks(s, date, symbol):
         logging.info(r.content)
         return None
     text = r.content.decode('gbk')
-    return pd.read_table(pd.compat.StringIO(text))
+    df = pd.read_table(pd.compat.StringIO(text), names=DOWNLOAD_TICKS_COLUMNS, skiprows=1)
+    df.drop(columns=['change', 'type'], inplace=True)
+    df.insert(0, 'symbol', symbol)
+    df.insert(1, 'date', date)
+    return df
 
 
 def main():
@@ -80,9 +90,13 @@ def main():
     #print(total_symbols)
     total_symbols = get_all_symbols_lite(s)
     total_ticks = {}
+    db_client = pymongo.MongoClient()
+    db_client.test.collection.create_index([('symbol', 1), ('date', 1)], unique=False, name='symbol_day_index')
     for x in total_symbols:
         total_ticks[x] = download_symbol_ticks(s, '2017-12-05', x)
-        logging.info('download %s', x)
+        if total_ticks[x] is not None:
+            logging.info('download %s (%d/%d)', x, len(total_ticks), len(total_symbols))
+            db_client.test.collection.insert(total_ticks[x].to_dict('records'))
     sys.system("pause")
 
 if __name__ == '__main__':
