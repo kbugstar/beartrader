@@ -17,9 +17,9 @@ URL_TOTAL_SYMBOLS_LITE = 'http://vip.stock.finance.sina.com.cn/quotes_service/ap
 URL_TUSHARE_CALENDAR_DATE = 'http://file.tushare.org/tsdata/calAll.csv'
 
 # Safari
-USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_1) AppleWebKit/604.3.5 (KHTML, like Gecko) Version/11.0.1 Safari/604.3.5'
+#USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_1) AppleWebKit/604.3.5 (KHTML, like Gecko) Version/11.0.1 Safari/604.3.5'
 # Chrome
-#USER_AGENT = 'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/62.0.3202.94 Safari/537.36'
+USER_AGENT = 'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/62.0.3202.94 Safari/537.36'
 REQUESTS_HEADERS = { 'User-Agent' : USER_AGENT } 
 RE_TOTAL_COUNT = re.compile(r'\(new String\("([^"]+)"\)\)')
 
@@ -93,7 +93,7 @@ def download_symbol_ticks(s, date, symbol):
     #df.insert(0, 'symbol', symbol)
     #df.insert(1, 'date', date)
     df.sort_values('time', inplace=True)
-    return df.reindex(range(df.shape[0]))
+    return df.reset_index(drop=True)
 
 def downloader(symbols, data, lock, db):
     s = requests.Session()
@@ -146,7 +146,7 @@ def main():
     #r = requests.get(URL_TUSHARE_CALENDAR_DATE)
     trading_day = pd.read_csv(URL_TUSHARE_CALENDAR_DATE)
     trading_day.sort_index(ascending=False, inplace=True)
-    trading_day_list = trading_day[(trading_day.isOpen == 1) & (trading_day.calendarDate <= '2017-12-11')]['calendarDate'].values
+    trading_day_list = trading_day[(trading_day.isOpen == 1) & (trading_day.calendarDate <= '2017-12-13')]['calendarDate'].values
 
     for date in trading_day_list:
         logging.info('downloading date:%s', date)
@@ -162,7 +162,7 @@ def main():
                 df = download_symbol_ticks(s, date, symbol)
                 if df is not None:
                     df.to_csv(os.path.join(today_path, symbol))
-                time.sleep(1.0)
+                #time.sleep(1.0)
             except Exception as e:
                 logging.error(e)
 
