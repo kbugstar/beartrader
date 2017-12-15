@@ -146,7 +146,7 @@ def main():
     #r = requests.get(URL_TUSHARE_CALENDAR_DATE)
     trading_day = pd.read_csv(URL_TUSHARE_CALENDAR_DATE)
     trading_day.sort_index(ascending=False, inplace=True)
-    trading_day_list = trading_day[(trading_day.isOpen == 1) & (trading_day.calendarDate <= '2017-12-13')]['calendarDate'].values
+    trading_day_list = trading_day[(trading_day.isOpen == 1) & (trading_day.calendarDate <= '2017-12-14')]['calendarDate'].values
 
     for date in trading_day_list:
         logging.info('downloading date:%s', date)
