@@ -116,12 +116,9 @@ def main():
     FORMAT = '%(asctime)-15s %(message)s'
     logging.getLogger('requests').setLevel(logging.CRITICAL)
     logging.getLogger('urllib3').setLevel(logging.CRITICAL)
-    logging.basicConfig(level=logging.INFO, format=FORMAT)
     s = requests.Session()
     #total_symbols = get_active_symbols(s, 'hs_a')
     #print(total_symbols)
-    total_symbols = get_all_symbols_lite(s)
-    total_ticks = {}
     #db = None
     #db_client = pymongo.MongoClient()
     #db_client.test.collection.create_index([('symbol', 1), ('date', 1)], unique=False, name='symbol_day_index')
@@ -143,10 +140,19 @@ def main():
         return
     dir_path = sys.argv[1]
 
+    if len(sys.argv) >= 3:
+        logging.basicConfig(filename=sys.argv[2], filemode='a', level=logging.INFO, format=FORMAT)
+        logging.info('logging file:%s', sys.argv[2])
+    else:
+        logging.basicConfig(level=logging.INFO, format=FORMAT)
+
+    total_symbols = get_all_symbols_lite(s)
+    total_ticks = {}
+
     #r = requests.get(URL_TUSHARE_CALENDAR_DATE)
     trading_day = pd.read_csv(URL_TUSHARE_CALENDAR_DATE)
     trading_day.sort_index(ascending=False, inplace=True)
-    trading_day_list = trading_day[(trading_day.isOpen == 1) & (trading_day.calendarDate <= '2017-12-14')]['calendarDate'].values
+    trading_day_list = trading_day[(trading_day.isOpen == 1) & (trading_day.calendarDate <= '2017-12-19')]['calendarDate'].values
 
     for date in trading_day_list:
         logging.info('downloading date:%s', date)

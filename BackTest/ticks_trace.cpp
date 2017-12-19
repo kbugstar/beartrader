@@ -6,17 +6,24 @@
 #include <boost/date_time/posix_time/ptime.hpp>
 #include <boost/date_time/posix_time/time_parsers.hpp>
 #include <boost/make_shared.hpp>
-#include <boost/thread/thread.hpp>
-#include <boost/thread/mutex.hpp>
-#include <boost/bind.hpp>
-#include <boost/thread/condition.hpp>
 #include <thread>
+#include <mutex>
+#include <atomic>
+#ifdef _WIN32 
+#include <Windows.h>
+#endif // _WIN32
 
 //#include "csv.h"
 #include "CCSVRow.h"
 
 using std::cout;
 using std::endl;
+
+#include <boost/thread/thread.hpp>
+#include <boost/lockfree/spsc_queue.hpp>
+#include <iostream>
+
+#include <boost/atomic.hpp>
 
 typedef struct _tick_trade_data
 {
@@ -37,6 +44,7 @@ public:
 	
 	bool read_line(std::string& line_stock_info);
 	bool write_to_file();
+	bool read_file(const char* file_path);
 
 private:
 	char* _buffer;
@@ -119,7 +127,7 @@ bool WriteFileBlock::read_line(std::string& line_stock_info)
 	if (_offset + sizeof(tick_data) > _size)
 	{
 		_size += 10240;
-		char* new_buffer = new char[10240];
+		char* new_buffer = new char[_size];
 		memcpy(new_buffer, _buffer, _offset);
 		delete[] _buffer;
 		_buffer = new_buffer;
@@ -130,24 +138,72 @@ bool WriteFileBlock::read_line(std::string& line_stock_info)
 	return true;
 }
 
+bool WriteFileBlock::read_file(const char* file_path)
+{
+	std::ifstream file(file_path);
+	std::string line_stock_info;
+	std::string last_line;
+
+	while (std::getline(file, line_stock_info) && file.good())
+	{
+		if (last_line.compare(line_stock_info) == 0)
+		{
+			continue;
+		}
+		read_line(line_stock_info);
+		last_line.swap(line_stock_info);
+	}
+	return true;
+}
+
 bool WriteFileBlock::write_to_file()
 {
-	std::ofstream out_file(_file_path);
-	out_file.write(_buffer, _offset);
+	std::ofstream out_file(_file_path, std::ios::out | std::ios::binary);
+	tick_trade_data* top_tick = (tick_trade_data*)_buffer;
+	size_t count = _offset / sizeof(tick_trade_data);
+	tick_trade_data* botton_tick = &top_tick[count-1];
+	if (top_tick->tick > botton_tick->tick)
+	{
+		// revert
+		tick_trade_data* revert_buf = (tick_trade_data*)new char[_offset];
+		for (size_t i = 0; i < count; i++)
+		{
+			revert_buf[i] = top_tick[count - 1 - i];
+		}
+		out_file.write((const char*)revert_buf, _offset);
+		delete[] revert_buf;
+ 	}
+	else
+	{
+		out_file.write(_buffer, _offset);
+	}
 	return true;
 }
 
 typedef std::list<WriteFileBlock*> sh_tick_data_list;
-boost::mutex sh_tick_data_list_lock_;
+typedef std::list<std::pair<boost::filesystem::path*, boost::filesystem::path*>> sh_file_path_list;
+
+HANDLE tick_data_semaphore;
+std::mutex sh_tick_data_list_lock_;
 sh_tick_data_list sh_tick_data_list_;
-bool work_done = false;
-boost::condition sh_tick_data_condition_;
+
+HANDLE tick_file_semaphore;
+std::mutex sh_tick_file_list_lock_;
+sh_file_path_list sh_tick_file_list_;
+
+std::atomic<bool> enum_done_(false);
+std::atomic<bool> work_done_(false);
+
 
 void writing_thread()
 {
+
 	while (true)
 	{
+		::WaitForSingleObject(tick_data_semaphore, INFINITE);
+
 		WriteFileBlock* _data_block = nullptr;
+
 		sh_tick_data_list_lock_.lock();
 		if (sh_tick_data_list_.size() > 0)
 		{
@@ -155,48 +211,105 @@ void writing_thread()
 			sh_tick_data_list_.pop_front();
 		}
 		sh_tick_data_list_lock_.unlock();
-
-		if (_data_block == nullptr && work_done)
-		{
+		
+		if (_data_block == nullptr)
 			break;
-		}
 
 		_data_block->write_to_file();
-
 		delete _data_block;
+		/*
+		while (spsc_queue_.pop(_data_block))
+		{
+			_data_block->write_to_file();
+			delete _data_block;
+		}
+		*/
 	}
 }
 
 int convert_str_to_bin_multi(const boost::filesystem::path& file_path, boost::filesystem::path& out_dir)
 {
 	uint32_t lines = 0;
-	std::ifstream file(file_path.string());
-	std::string line_stock_info;
+//	std::ifstream file(file_path.string());
+//	std::string line_stock_info;
+//	std::string last_line;
 	WriteFileBlock* _data_block = new WriteFileBlock((out_dir / file_path.filename()).string().c_str(), file_path.size());
 
+	_data_block->read_file(file_path.string().c_str());
+	/*
 	while (std::getline(file, line_stock_info) && file.good())
 	{
+		if (last_line.compare(line_stock_info) == 0)
+		{
+			continue;
+		}
 		_data_block->read_line(line_stock_info);
 		lines++;
+		last_line.swap(line_stock_info);
 	}
+	*/
 
+//	spsc_queue_.push(_data_block);
 	sh_tick_data_list_lock_.lock();
 	sh_tick_data_list_.push_back(_data_block);
 	sh_tick_data_list_lock_.unlock();
+	::ReleaseSemaphore(tick_data_semaphore, 1, NULL);
 	return lines;
 }
 
-void rading_thread(boost::filesystem::path& dir, boost::filesystem::path& out_dir)
+void enuming_thread(const boost::filesystem::path& dir, const boost::filesystem::path& out_dir)
 {
+	if (!exists(out_dir))
+	{
+		boost::filesystem::create_directories(out_dir);
+	}
+
 	for (auto& x : boost::filesystem::directory_iterator(dir))
 	{
 		//cout << x << endl;
 		if (is_regular_file(x.path()))
 		{
-			convert_str_to_bin_multi(x.path(), out_dir);
+			sh_tick_file_list_lock_.lock();
+			sh_tick_file_list_.push_back(std::make_pair(new boost::filesystem::path(x.path()), \
+				new boost::filesystem::path(out_dir)));
+			sh_tick_file_list_lock_.unlock();
+			long count = 0;
+			::ReleaseSemaphore(tick_file_semaphore, 1, &count);
+			if (count > 1000)
+			{
+				Sleep(500);
+			}
+		}
+		else if (is_directory(x.path()))
+		{
+			enuming_thread(x.path(), out_dir / x.path().filename());
 		}
 	}
-	work_done = true;
+}
+
+
+void reading_thread()
+{
+	while (true)
+	{
+		::WaitForSingleObject(tick_file_semaphore, INFINITE);
+		boost::filesystem::path* src = nullptr;
+		boost::filesystem::path* dst = nullptr;
+		sh_tick_file_list_lock_.lock();
+		if (sh_tick_file_list_.size() > 0)
+		{
+			src = sh_tick_file_list_.front().first;
+			dst = sh_tick_file_list_.front().second;
+			sh_tick_file_list_.pop_front();
+		}
+		sh_tick_file_list_lock_.unlock();
+
+		if (src == nullptr)
+			break;
+		convert_str_to_bin_multi(*src, *dst);
+		delete src;
+		delete dst;
+	}
 }
 
 int convert_str_to_bin(const boost::filesystem::path& file_path, boost::filesystem::path& out_dir)
@@ -283,12 +396,7 @@ int main(int argc, char** argv)
 		return -1;
 	}
 
-	if (!exists(out_dir))
-	{
-		boost::filesystem::create_directories(out_dir);
-	}
-
-	if (!is_directory(out_dir))
+	if (!is_directory(dir))
 	{
 		return -1;
 	}
@@ -302,12 +410,36 @@ int main(int argc, char** argv)
 // 		}
 // 		total++;
 // 	}
-	std::thread reader(rading_thread, dir, out_dir);
-	std::thread writer(writing_thread);
 
-	reader.join();
-	writer.join();
+	tick_file_semaphore = ::CreateSemaphore(NULL, 0, 1024, NULL);
+	tick_data_semaphore = ::CreateSemaphore(NULL, 0, 1024, NULL);
+	std::thread enumer(enuming_thread, dir, out_dir);
 
+	std::list<std::thread*> read_thread_group;
+	std::list<std::thread*> write_thread_group;
+	for (int i = 0; i < 8; i++)
+	{
+		read_thread_group.push_back(new std::thread(reading_thread));
+		write_thread_group.push_back(new std::thread(writing_thread));
+	}
+
+	enumer.join();
+	::ReleaseSemaphore(tick_file_semaphore, 8, NULL);
+
+	for (auto thread : read_thread_group)
+	{
+		thread->join();
+		delete thread;
+	}
+	::ReleaseSemaphore(tick_data_semaphore, 8, NULL);
+
+	for (auto thread : write_thread_group)
+	{
+		thread->join();
+		delete thread;
+	}
+	::CloseHandle(tick_data_semaphore);
+	::CloseHandle(tick_file_semaphore);
 	cout << "Timstamp:" << t.elapsed() << "total:" << total << endl;
 	return 0;
 }
