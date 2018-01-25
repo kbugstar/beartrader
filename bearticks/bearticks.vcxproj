@@ -122,11 +122,15 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="CTdxTicks.cpp" />
+    <ClCompile Include="TdxTrade.cpp" />
+    <ClCompile Include="tdx_ticks.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="tdx_decoder.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="CTdxTicks.h" />
+    <ClInclude Include="TdxTrade.h" />
+    <ClInclude Include="tdx_ticks.h" />
+    <ClInclude Include="tdx_decoder.h" />
     <ClInclude Include="zconf.h" />
     <ClInclude Include="zlib.h" />
   </ItemGroup>

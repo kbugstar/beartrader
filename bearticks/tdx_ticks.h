@@ -18,7 +18,7 @@ typedef struct _data_block
 {
 	const char* data;
 	size_t		size;
-}data_block;
+}CmdDataBlock;
 
 typedef struct _server_info
 {
@@ -28,20 +28,22 @@ typedef struct _server_info
 }server_info;
 
 
-extern const uint32_t _tdx_servers_count;
-extern server_info _tdx_servers[];
+extern const uint32_t kTdxServerCount;
+extern server_info kTdxServers[];
 
-class CTdxTicks
+class TdxTicks
 {
 public:
-	CTdxTicks();
-	~CTdxTicks();
+	TdxTicks();
+	~TdxTicks();
 
 	bool connect_server(const char* ip, uint16_t port);
 
 	bool get_ticks();
+	bool parse_ticks(const unsigned  char* Buffer, size_t Size);
 
 private:
+
 	SOCKET s_;
 };
 

@@ -18,18 +18,30 @@
     <ClCompile Include="main.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="CTdxTicks.cpp">
+    <ClCompile Include="tdx_decoder.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="tdx_ticks.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="TdxTrade.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="CTdxTicks.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
     <ClInclude Include="zlib.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="zconf.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="tdx_decoder.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="tdx_ticks.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="TdxTrade.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>

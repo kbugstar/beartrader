@@ -1,22 +1,26 @@
 #include <iostream>
 #include <list>
-#include "CTdxTicks.h"
+#include "tdx_ticks.h"
 #include "zlib.h"
 
 int main(int argc, char** argv)
 {
-	for (int i = 0; i < _tdx_servers_count; i++)
+	TdxTicks ticks;
+	ticks.parse_ticks(peer1_22, sizeof(peer1_22));
+	return 0;
+	
+	for (int i = 0; i < kTdxServerCount; i++)
 	{
-		CTdxTicks ticks;
-		std::cout << _tdx_servers[i].server_name << std::endl;
-		if (ticks.connect_server(_tdx_servers[i].ip_str, _tdx_servers[i].ip_port))
+		TdxTicks ticks;
+		std::cout << kTdxServers[i].server_name << std::endl;
+		if (ticks.connect_server(kTdxServers[i].ip_str, kTdxServers[i].ip_port))
 		{
-			std::cout << "Connect " << _tdx_servers[i].ip_str << " successed!" << std::endl;
+			std::cout << "Connect " << kTdxServers[i].ip_str << " successed!" << std::endl;
 			ticks.get_ticks();
 		}
 		else
 		{
-			std::cout << "Connect " << _tdx_servers[i].ip_str << " failed!" << std::endl;
+			std::cout << "Connect " << kTdxServers[i].ip_str << " failed!" << std::endl;
 		}
 	}
 	return 0;

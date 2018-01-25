@@ -1,22 +1,29 @@
 #include <stdint.h>
-#include "CTdxTicks.h"
+#include <iostream>
+#include "tdx_ticks.h"
+#include "tdx_decoder.h"
 #include "zlib.h"
+
+using std::cout;
+using std::endl;
+using TdxDecoder::ReadInt;
 
 #pragma comment(lib, "ws2_32.lib")
 //#pragma comment(lib, "zlibwapi.lib")
+
 
 #define START_UP_COMMAND_1 "\x0c\x02\x18\x93\x00\x01\x03\x00\x03\x00\x0d\x00\x01"
 #define START_UP_COMMAND_2 "\x0c\x02\x18\x94\x00\x01\x03\x00\x03\x00\x0d\x00\x02"
 #define START_UP_COMMAND_3 "\x0c\x03\x18\x99\x00\x01\x20\x00\x20\x00\xdb\x0f\xd5\xd0\xc9\xcc\xd6\xa4\xc8\xaf\x00\x00\x00\x8f\xc2\x25\x40\x13\x00\x00\xd5\x00\xc9\xcc\xbd\xf0\xd7\xea\x00\x00\x00\x02"
 
-data_block _hand_shake_commands[] = {
+CmdDataBlock kHandleShakeCmds[] = {
 	{ START_UP_COMMAND_1, sizeof(START_UP_COMMAND_1) - 1 },
 	{ START_UP_COMMAND_2, sizeof(START_UP_COMMAND_2) - 1 },
 	{ START_UP_COMMAND_3, sizeof(START_UP_COMMAND_3) - 1 }
 };
 
 
-server_info _tdx_servers[] =
+server_info kTdxServers[] =
 {
 	{ "长城国瑞电信1", "218.85.139.19", 7709 },
 	{ "长城国瑞电信2", "218.85.139.20", 7709 },
@@ -124,17 +131,17 @@ server_info _tdx_servers[] =
 	{ "华林", "220.178.55.86", 7709 }
 };
 
-const uint32_t _tdx_servers_count ARRAYSIZE(_tdx_servers);
+const uint32_t kTdxServerCount ARRAYSIZE(kTdxServers);
 
-CTdxTicks::CTdxTicks()
+TdxTicks::TdxTicks()
 {
 }
 
-CTdxTicks::~CTdxTicks()
+TdxTicks::~TdxTicks()
 {
 }
 
-bool CTdxTicks::connect_server(const char* ip, uint16_t port)
+bool TdxTicks::connect_server(const char* ip, uint16_t port)
 {
 	WORD ver;
 	WSADATA data;
@@ -164,7 +171,7 @@ bool CTdxTicks::connect_server(const char* ip, uint16_t port)
 		return false;
 	}
 
-	for (auto x : _hand_shake_commands)
+	for (auto x : kHandleShakeCmds)
 	{
 		if (SOCKET_ERROR == send(s_, x.data, x.size, 0))
 			return false;
@@ -186,14 +193,14 @@ bool CTdxTicks::connect_server(const char* ip, uint16_t port)
 	return true;
 }
 
-bool CTdxTicks::get_ticks()
+bool TdxTicks::get_ticks()
 {
 	const char query_cmd[] = "\x0c\x17\x08\x01\x01\x01\x0e\x00\x0e\x00\xc5\x0f\x00\x00";
 	char buf[1024];
 
 	size_t size = sizeof(query_cmd) - 1;
 	memcpy(buf, query_cmd, size);
-	memcpy(buf + size, "000001", 6);
+	memcpy(buf + size, "000415", 6);
 	size += 6;
 	*(uint16_t*)&buf[size] = 0;
 	size += 2;
@@ -209,20 +216,128 @@ bool CTdxTicks::get_ticks()
 		return false;
 	if (header.ziped_size == 0)
 		return false;
-	char *recv_buf = new char[header.ziped_size];
-	size_t recv_bytes = recv(s_, recv_buf, header.ziped_size, 0);
+	unsigned char *recv_buf = new unsigned char[header.ziped_size];
+	size_t recv_bytes = recv(s_, (char*)recv_buf, header.ziped_size, 0);
 	if (SOCKET_ERROR == recv_bytes)
 	{
 		delete[] recv_buf;
 		return false;
 	}
+
+	unsigned char *unzip_buf = nullptr;
+	unsigned char* point = recv_buf;
+	size_t bytes_remain = recv_bytes;
 	if (header.ziped_size != header.unzip_size)
 	{
-		char *unzip_buf = new char[header.unzip_size + 16];
+		unzip_buf = new unsigned char[header.unzip_size + 16];
 		size_t out_size = header.unzip_size + 16;
 		uncompress((Bytef*)unzip_buf, (uLongf*)&out_size, (Bytef*)recv_buf, recv_bytes);
-		delete[] unzip_buf;
+		point = unzip_buf;
+		bytes_remain = out_size;
+	}
+
+	uint32_t num_ticks = *(uint16_t*)point;
+	point += 2;
+	bytes_remain -= 2;
+	int last_price = 0;
+	for (int i = 0; i < num_ticks; i++)
+	{
+		int minutes = *(uint16_t*)point;
+		int hours = minutes / 60;
+		minutes = minutes % 60;
+		point += 2;
+		bytes_remain -= 2;
+		cout << "time:" << hours << ":" << minutes << "\t";
+		
+		size_t bytes_used = 0;
+		int ret = ReadInt(point, bytes_remain, &bytes_used);
+		point += bytes_used;
+		bytes_remain -= bytes_used;
+		last_price += ret;
+		cout << "price:" << last_price << "\t";
+
+		ret = ReadInt(point, bytes_remain, &bytes_used);
+		point += bytes_used;
+		bytes_remain -= bytes_used;
+		cout << "vol:" << ret << "\t";
+
+		ret = ReadInt(point, bytes_remain, &bytes_used);
+		point += bytes_used;
+		bytes_remain -= bytes_used;
+		cout << "num:" << ret << "\t";
+
+		ret = ReadInt(point, bytes_remain, &bytes_used);
+		point += bytes_used;
+		bytes_remain -= bytes_used;
+		cout << "bs:" << ret << "\t";
+
+		ret = ReadInt(point, bytes_remain, &bytes_used);
+		point += bytes_used;
+		bytes_remain -= bytes_used;
+		cout << "un:" << ret << endl;
 	}
 	delete[] recv_buf;
+	if (unzip_buf)
+		delete[] unzip_buf;
+	return true;
+}
+
+bool TdxTicks::parse_ticks(const unsigned char* Buffer, size_t Size)
+{
+	tdx_header* header = (tdx_header*)Buffer;
+	unsigned char *unzip_buf = nullptr;
+	const unsigned char* point = Buffer + sizeof(tdx_header);
+	size_t bytes_remain = Size - sizeof(tdx_header);
+	if (header->ziped_size != header->unzip_size)
+	{
+		unzip_buf = new unsigned char[header->unzip_size + 16];
+		size_t out_size = header->unzip_size + 16;
+		uncompress((Bytef*)unzip_buf, (uLongf*)&out_size, (Bytef*)point, bytes_remain);
+		point = unzip_buf;
+		bytes_remain = out_size;
+	}
+
+	uint32_t num_ticks = *(uint16_t*)point;
+	point += 2;
+	bytes_remain -= 2;
+	int last_price = 0;
+	for (int i = 0; i < num_ticks; i++)
+	{
+		int minutes = *(uint16_t*)point;
+		int hours = minutes / 60;
+		minutes = minutes % 60;
+		point += 2;
+		bytes_remain -= 2;
+		cout << "time:" << hours << ":" << minutes << "\t";
+
+		size_t bytes_used = 0;
+		int ret = ReadInt(point, bytes_remain, &bytes_used);
+		point += bytes_used;
+		bytes_remain -= bytes_used;
+		last_price += ret;
+		cout << "price:" << last_price << "\t";
+
+		ret = ReadInt(point, bytes_remain, &bytes_used);
+		point += bytes_used;
+		bytes_remain -= bytes_used;
+		cout << "vol:" << ret << "\t";
+
+		ret = ReadInt(point, bytes_remain, &bytes_used);
+		point += bytes_used;
+		bytes_remain -= bytes_used;
+		cout << "num:" << ret << "\t";
+
+		ret = ReadInt(point, bytes_remain, &bytes_used);
+		point += bytes_used;
+		bytes_remain -= bytes_used;
+		cout << "bs:" << ret << "\t";
+
+		ret = ReadInt(point, bytes_remain, &bytes_used);
+		point += bytes_used;
+		bytes_remain -= bytes_used;
+		cout << "un:" << ret << endl;
+	}
+	if (unzip_buf)
+		delete[] unzip_buf;
 	return true;
 }
